@@ -1,5 +1,31 @@
-// 建構具手腳關節軸心的 3D 擬真人物：
-// 坐姿修正：雙腳鞋底永遠踩在地面 (y = 0，絕不穿模入地)，臀部底面精準貼齊 seat_h (床高或椅子坐墊高)！
+// 貼圖快取與 WebGL 資源釋放工具：防止重複載入 Base64/SVG 貼圖與場景重建時的 GPU 記憶體洩漏
+const textureCache = new Map();
+const sharedTexLoader = new THREE.TextureLoader();
+
+function getCachedTexture(url) {
+  if (!url) return null;
+  if (!textureCache.has(url)) {
+    textureCache.set(url, sharedTexLoader.load(url));
+  }
+  return textureCache.get(url);
+}
+
+function disposeObject3D(obj) {
+  if (!obj) return;
+  obj.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach(m => m && m.dispose());
+      } else {
+        child.material.dispose();
+      }
+    }
+  });
+}
+
+// 建構具手腳關節軸心的 3D 擬真人物（套用人體工學 H-Point 坐姿基準點、軟墊壓縮量與軀幹傾角）：
+// 坐姿修正：雙腳鞋底永遠踩在地面 (y = 0，絕不穿模入地)，H-Point 精準貼齊有效座高 (Seat Pan Height)！
 function buildRealistic3DHuman(hData) {
   const group = new THREE.Group();
   const stature = hData.height || 178;
@@ -74,8 +100,12 @@ function buildRealistic3DHuman(hData) {
     group.userData.limbs = { armL: armLPivot, armR: armRPivot, legL: legLPivot, legR: legRPivot };
 
   } else if (posture === "sit") {
-    // 坐姿：雙腳鞋底永遠著地 (y = 0)，臀部底面精準貼齊座高 seatH (床高 55cm 或椅子坐墊高)
-    const seatH = Math.max(25, hData.seat_h || 45);
+    // 坐姿人體工學：區分床沿無靠背微前傾 (-0.08 rad) 與工作椅靠背支撐 (0.04 rad)，並扣除軟墊下陷量 (Cushion Compression)
+    const isBedEdge = hData.sit_mode === "bed_edge";
+    const cushionComp = isBedEdge ? 2 : 1;
+    const seatH = Math.max(25, (hData.seat_h || 45) - cushionComp);
+    const torsoTilt = isBedEdge ? -0.08 : 0.04;
+    const zShift = Math.sin(torsoTilt) * 28 * s;
     const shoeH = 7 * s;
 
     // 雙腳平踏於地面 (y = shoeH / 2)
@@ -85,7 +115,7 @@ function buildRealistic3DHuman(hData) {
     const shoeR = new THREE.Mesh(shoeGeo, shoeMat);
     shoeR.position.set(8.5 * s, shoeH / 2, -28 * s);
 
-    // 小腿由腳踝 (shoeH) 垂直連接至座高 (seatH)
+    // 小腿由腳踝 (shoeH) 垂直連接至有效座面高度 (seatH)
     const calfLen = Math.max(12, seatH - shoeH);
     const calfGeo = new THREE.CylinderGeometry(5 * s, 4 * s, calfLen, 12);
     const calfL = new THREE.Mesh(calfGeo, pantsMat);
@@ -93,7 +123,7 @@ function buildRealistic3DHuman(hData) {
     const calfR = new THREE.Mesh(calfGeo, pantsMat);
     calfR.position.set(8.5 * s, shoeH + calfLen / 2, -24 * s);
 
-    // 水平大腿與臀部底面貼齊 seatH
+    // 水平大腿與 H-Point 坐姿基準點貼齊 seatH
     const thighGeo = new THREE.BoxGeometry(11 * s, 11 * s, 32 * s);
     const thighL = new THREE.Mesh(thighGeo, pantsMat);
     thighL.position.set(-8.5 * s, seatH + 5.5 * s, -12 * s);
@@ -101,17 +131,18 @@ function buildRealistic3DHuman(hData) {
     thighR.position.set(8.5 * s, seatH + 5.5 * s, -12 * s);
 
     pelvisMesh.position.set(0, seatH + 7 * s, 0);
-    torsoMesh.position.set(0, seatH + 37 * s, 0);
-    neckMesh.position.set(0, seatH + 65 * s, 0);
-    headGroup.position.set(0, seatH + 77 * s, 0);
+    torsoMesh.position.set(0, seatH + 37 * s, zShift * 0.5);
+    torsoMesh.rotation.x = torsoTilt;
+    neckMesh.position.set(0, seatH + 65 * s, zShift * 0.85);
+    headGroup.position.set(0, seatH + 77 * s, zShift);
 
     const armGeo = new THREE.CylinderGeometry(4.2 * s, 3.5 * s, 48 * s, 12);
     const armL = new THREE.Mesh(armGeo, shirtMat);
-    armL.position.set(-20 * s, seatH + 37 * s, -6 * s);
-    armL.rotation.x = 0.35;
+    armL.position.set(-20 * s, seatH + 37 * s, -6 * s + zShift * 0.5);
+    armL.rotation.x = 0.35 + torsoTilt;
     const armR = new THREE.Mesh(armGeo, shirtMat);
-    armR.position.set(20 * s, seatH + 37 * s, -6 * s);
-    armR.rotation.x = 0.35;
+    armR.position.set(20 * s, seatH + 37 * s, -6 * s + zShift * 0.5);
+    armR.rotation.x = 0.35 + torsoTilt;
 
     rig.add(headGroup, neckMesh, torsoMesh, pelvisMesh, armL, armR, thighL, thighR, calfL, calfR, shoeL, shoeR);
 
@@ -358,7 +389,7 @@ function initThree() {
     if (transformControl && transformControl.dragging) {
       const trashEl = document.getElementById("trash-dropzone");
       const rect = trashEl.getBoundingClientRect();
-      isOverTrash = (e.clientX >= rect.left - 20 && e.clientX <= rect.right + 20 && e.clientY >= rect.top - 20 && e.clientY <= rect.bottom + 20);
+      isOverTrash = (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom);
       trashEl.classList.toggle("hover", isOverTrash);
     }
     if (currentMode === "FPV" && isLookingFPV) {
@@ -483,11 +514,13 @@ function updateThreeScene() {
   selectable3DMeshes = [];
   walkable3DMeshes = [];
 
-  const keep = [scene.children[0], scene.children[1], transformControl];
-  scene.children = keep.filter(Boolean);
+  const keepSet = new Set([scene.children[0], scene.children[1], transformControl].filter(Boolean));
+  scene.children.forEach(child => {
+    if (!keepSet.has(child)) disposeObject3D(child);
+  });
+  scene.children = Array.from(keepSet);
 
   const rw = appState.room.width, rd = appState.room.depth, rh = appState.room.height;
-  const texLoader = new THREE.TextureLoader();
 
   const floorGeo = new THREE.PlaneGeometry(rw, rd);
   const floorMat = new THREE.MeshLambertMaterial({ color: 0x5089C6, side: THREE.DoubleSide });
@@ -507,7 +540,7 @@ function updateThreeScene() {
   if (appState.room.show_walls) {
     let wallMat;
     if (appState.room.wall_texture) {
-      wallMat = new THREE.MeshLambertMaterial({ map: texLoader.load(appState.room.wall_texture), side: THREE.DoubleSide });
+      wallMat = new THREE.MeshLambertMaterial({ map: getCachedTexture(appState.room.wall_texture), side: THREE.DoubleSide });
     } else {
       wallMat = new THREE.MeshLambertMaterial({
         color: appState.room.wall_color || "#F8FAFC",
@@ -532,7 +565,7 @@ function updateThreeScene() {
   if (appState.room.show_ceiling) {
     let ceilMat;
     if (appState.room.ceiling_texture) {
-      ceilMat = new THREE.MeshLambertMaterial({ map: texLoader.load(appState.room.ceiling_texture), side: THREE.DoubleSide });
+      ceilMat = new THREE.MeshLambertMaterial({ map: getCachedTexture(appState.room.ceiling_texture), side: THREE.DoubleSide });
     } else {
       ceilMat = new THREE.MeshLambertMaterial({ color: appState.room.ceiling_color || "#FFFFFF", side: THREE.DoubleSide });
     }
@@ -566,6 +599,11 @@ function updateThreeScene() {
     const h = item.h || 30;
     const zBottom = item.z || 0;
     const t = item.item_type || "furniture";
+    const borderHex = getItemBorderColor(item);
+    const edgeMat = new THREE.LineBasicMaterial({ color: borderHex });
+    const surfMat = item.texture
+      ? new THREE.MeshLambertMaterial({ map: getCachedTexture(item.texture) })
+      : new THREE.MeshLambertMaterial({ color: item.color || "#38BDF8" });
     let itemMesh;
 
     const isEastWestWall = (item.wall === "west" || item.wall === "east") || (item.d > item.w && isZAdjustableWallType(t));
@@ -573,27 +611,26 @@ function updateThreeScene() {
     const thickD = isEastWestWall ? item.w : item.d;
 
     if (t === "chair") {
-      // 🪑 3D 擬真椅子渲染：四根椅腳 + 坐墊(依設定之坐墊高度 seat_h 定位) + 椅背
+      // 🪑 3D 擬真椅子渲染：四根椅腳 + 坐墊(依設定之坐墊高度 seat_h 定位) + 椅背(位於椅子後方 +Z)
       itemMesh = new THREE.Group();
       const seatH = Math.max(15, Math.min(h - 5, item.seat_h || 45));
       const seatThick = 5;
-      const mat = item.texture ? new THREE.MeshLambertMaterial({ map: texLoader.load(item.texture) }) : new THREE.MeshLambertMaterial({ color: item.color });
-      const legMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+      const legMat = new THREE.MeshLambertMaterial({ color: borderHex });
 
       // 坐墊平面 (頂面高度恰為 seatH，相對中心偏移為 seatH - h/2)
       const seatGeo = new THREE.BoxGeometry(item.w, seatThick, item.d);
-      const seatMesh = new THREE.Mesh(seatGeo, mat);
+      const seatMesh = new THREE.Mesh(seatGeo, surfMat);
       seatMesh.position.y = -h / 2 + seatH - seatThick / 2;
-      seatMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(seatGeo), new THREE.LineBasicMaterial({ color: 0x1E293B })));
+      seatMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(seatGeo), edgeMat));
       itemMesh.add(seatMesh);
 
       // 椅背 (由坐墊向上延伸至總高度 h，位於椅子後方 +Z)
       const backH = Math.max(5, h - seatH);
       const backThick = Math.max(4, item.d * 0.12);
       const backGeo = new THREE.BoxGeometry(item.w, backH, backThick);
-      const backMesh = new THREE.Mesh(backGeo, mat);
+      const backMesh = new THREE.Mesh(backGeo, surfMat);
       backMesh.position.set(0, -h / 2 + seatH + backH / 2, item.d / 2 - backThick / 2);
-      backMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(backGeo), new THREE.LineBasicMaterial({ color: 0x1E293B })));
+      backMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(backGeo), edgeMat));
       itemMesh.add(backMesh);
 
       // 四根椅腳 (由地面 0 延伸至坐墊底部)
@@ -612,17 +649,22 @@ function updateThreeScene() {
       itemMesh = new THREE.Group();
       const fDepth = Math.max(thickD, 8);
       const frameGeo = new THREE.BoxGeometry(faceW, h, fDepth);
-      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(frameGeo), new THREE.LineBasicMaterial({ color: 0xF59E0B, linewidth: 3 })));
-      const sceneryTex = texLoader.load(item.scenery || appState.default_fuji);
-      const glassMesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, faceW - 4), Math.max(4, h - 4), fDepth * 0.6), new THREE.MeshBasicMaterial({ map: sceneryTex }));
+      if (item.texture) {
+        const frameBand = new THREE.Mesh(frameGeo, surfMat);
+        itemMesh.add(frameBand);
+      }
+      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(frameGeo), edgeMat));
+      const sceneryTex = getCachedTexture(item.scenery || appState.default_fuji);
+      const glassMesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, faceW - 4), Math.max(4, h - 4), fDepth * 0.65), new THREE.MeshBasicMaterial({ map: sceneryTex }));
       itemMesh.add(glassMesh);
       if (isEastWestWall) itemMesh.rotation.y = Math.PI / 2;
 
     } else if (t === "socket") {
       itemMesh = new THREE.Group();
       const w = Math.max(faceW, 12), d = Math.max(thickD, 6);
-      const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: 0xF8FAFC }));
-      plateMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(plateMesh.geometry), new THREE.LineBasicMaterial({ color: 0x94A3B8 })));
+      const plateMat = item.texture ? surfMat : new THREE.MeshLambertMaterial({ color: item.color || 0xF8FAFC });
+      const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), plateMat);
+      plateMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(plateMesh.geometry), edgeMat));
       itemMesh.add(plateMesh);
       [-w * 0.22, w * 0.22].forEach(ox => {
         [-d/2 - 0.4, d/2 + 0.4].forEach(sz => {
@@ -641,7 +683,9 @@ function updateThreeScene() {
     } else if (t === "switch") {
       itemMesh = new THREE.Group();
       const w = Math.max(faceW, 12), d = Math.max(thickD, 6);
-      const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: 0xF1F5F9 }));
+      const plateMat = item.texture ? surfMat : new THREE.MeshLambertMaterial({ color: item.color || 0xF1F5F9 });
+      const plateMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), plateMat);
+      plateMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(plateMesh.geometry), edgeMat));
       itemMesh.add(plateMesh);
       [-w * 0.2, w * 0.2].forEach(ox => {
         const btnMesh = new THREE.Mesh(new THREE.BoxGeometry(w * 0.32, h * 0.65, d + 2.2), new THREE.MeshLambertMaterial({ color: 0xE2E8F0 }));
@@ -656,9 +700,8 @@ function updateThreeScene() {
     } else if (t === "door") {
       itemMesh = new THREE.Group();
       const w = faceW, d = Math.max(thickD, 8);
-      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w + 6, h + 3, d + 2)), new THREE.LineBasicMaterial({ color: 0x451A03 })));
-      const panelMat = item.texture ? new THREE.MeshLambertMaterial({ map: texLoader.load(item.texture) }) : new THREE.MeshLambertMaterial({ color: item.color || 0x8B5A2B });
-      const panelMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d * 0.75), panelMat);
+      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w + 6, h + 3, d + 2)), edgeMat));
+      const panelMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d * 0.75), surfMat);
       itemMesh.add(panelMesh);
 
       const handleSide = item.flip_x ? -1 : 1;
@@ -674,9 +717,8 @@ function updateThreeScene() {
 
     } else {
       const geo = new THREE.BoxGeometry(item.w, h, item.d);
-      const mat = item.texture ? new THREE.MeshLambertMaterial({ map: texLoader.load(item.texture) }) : new THREE.MeshLambertMaterial({ color: item.color });
-      itemMesh = new THREE.Mesh(geo, mat);
-      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: t === "wall_item" ? 0x10B981 : 0x1E293B })));
+      itemMesh = new THREE.Mesh(geo, surfMat);
+      itemMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat));
       itemMesh.rotation.y = -(item.rot || 0) * Math.PI / 180;
     }
 
@@ -709,17 +751,23 @@ function syncFPVCamera() {
   applyCameraProjection();
   const h = appState.human;
   const eyeY = getHumanEyeHeight();
-  camera.position.set(h.x, eyeY, h.y);
-
   const yawRad = (h.rot || 0) * Math.PI / 180;
   const pitchAngle = h.lock_horizontal ? 0 : (h.pitch || 0);
   const pitchRad = pitchAngle * Math.PI / 180;
+
+  // 當坐於椅子或床沿時，眼睛位於頭部前方 (約 9cm)，確保背靠椅背時視點不會穿入椅背，呈現自然人眼往前看的視角
+  const s = (h.height || 178) / 175;
+  const forwardEyeOffset = (h.posture === "sit") ? (9 * s) : (4 * s);
+  const camX = h.x + Math.sin(yawRad) * forwardEyeOffset;
+  const camZ = h.y - Math.cos(yawRad) * forwardEyeOffset;
+
+  camera.position.set(camX, eyeY, camZ);
 
   const dirX = Math.sin(yawRad) * Math.cos(pitchRad);
   const dirY = Math.sin(pitchRad);
   const dirZ = -Math.cos(yawRad) * Math.cos(pitchRad);
 
-  camera.lookAt(h.x + dirX * 100, eyeY + dirY * 100, h.y + dirZ * 100);
+  camera.lookAt(camX + dirX * 100, eyeY + dirY * 100, camZ + dirZ * 100);
 }
 
 window.enterHumanFPV = function() {
@@ -736,8 +784,13 @@ window.enterHumanFPV = function() {
   if (!renderer) initThree();
   controls.enabled = false;
   if (transformControl) transformControl.detach();
-  const check = checkHumanWalkable(appState.human.x, appState.human.y);
-  appState.human.z = check.baseZ;
+  if (appState.human.posture === "sit" && appState.human.sit_mode === "chair") {
+    const ch = appState.items.find(i => i.id === appState.human.sit_chair_id);
+    if (ch) alignHumanToChair(ch);
+  } else {
+    const check = checkHumanWalkable(appState.human.x, appState.human.y);
+    appState.human.z = (appState.human.posture === "sit") ? 0 : check.baseZ;
+  }
   initHumanFormValues();
   updateThreeScene();
   syncFPVCamera();
@@ -751,6 +804,7 @@ window.exitHumanFPV = function() {
 
 function animateThree() {
   requestAnimationFrame(animateThree);
+  if (currentMode === "2D") return; // 2D 模式下暫停 WebGL 背景渲染以節省 GPU/CPU 資源
 
   let isHumanMovingNow = false;
 
@@ -784,19 +838,33 @@ function animateThree() {
     if (currentMode === "FPV") syncFPVCamera();
   }
 
-  // 方向鍵與搖桿移動速度再放慢 40% (2.24 * 0.6 = 1.34)
+  // 方向鍵與搖桿移動：若處於「坐床邊」模式則沿床沿平滑移動，不因轉角視角切換而卡住
   if (fpvMoveDir.forward !== 0 || fpvMoveDir.right !== 0) {
-    const speed = 1.34;
-    const yawRad = (appState.human.rot || 0) * Math.PI / 180;
-    const fx = Math.sin(yawRad), fz = -Math.cos(yawRad);
-    const rx = Math.cos(yawRad), rz = Math.sin(yawRad);
-    const nx = appState.human.x + (fx * fpvMoveDir.forward + rx * fpvMoveDir.right) * speed;
-    const ny = appState.human.y + (fz * fpvMoveDir.forward + rz * fpvMoveDir.right) * speed;
-    const moved = tryMoveHumanTo(nx, ny, true);
+    const speed = 1.65;
+    let moved = false;
+    if (appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") {
+      moved = slideHumanAlongBedEdge(fpvMoveDir.forward, fpvMoveDir.right, speed);
+    } else {
+      const yawRad = (appState.human.rot || 0) * Math.PI / 180;
+      const fx = Math.sin(yawRad), fz = -Math.cos(yawRad);
+      const rx = Math.cos(yawRad), rz = Math.sin(yawRad);
+      const nx = appState.human.x + (fx * fpvMoveDir.forward + rx * fpvMoveDir.right) * speed;
+      const ny = appState.human.y + (fz * fpvMoveDir.forward + rz * fpvMoveDir.right) * speed;
+      moved = tryMoveHumanTo(nx, ny, true);
+    }
     if (moved) isHumanMovingNow = true;
     if (human3DGroup) {
       const groupBaseY = (appState.human.posture === "sit") ? 0 : (appState.human.z || 0);
       human3DGroup.position.set(appState.human.x, groupBaseY, appState.human.y);
+      human3DGroup.rotation.y = -(appState.human.rot || 0) * Math.PI / 180;
+    }
+    if (currentMode === "2D" && canvas) {
+      const hg = canvas.getObjects().find(o => o.isHuman);
+      if (hg) {
+        hg.set({ left: appState.human.x, top: appState.human.y, angle: appState.human.rot || 0 });
+        hg.setCoords();
+        canvas.requestRenderAll();
+      }
     }
     initHumanFormValues();
     if (currentMode === "FPV") syncFPVCamera();

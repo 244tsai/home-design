@@ -13,140 +13,178 @@
       <div class="tab-btn" id="tab-btn-save" onclick="switchLeftTab('save')">💾 存檔</div>
     </div>
 
-    <!-- 標籤 1：物件新增(填好按新增) + 物件編輯 -->
+    <!-- 標籤 1：物件新增 + 物件編輯 + 分類管理 (預設皆折疊收合，點選時展開) -->
     <div class="tab-content" id="tab-content-item">
       <div style="background:#1E293B; border:1px solid #3B82F6; padding:7px 8px; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:6px;">
         <span style="font-size:11px; font-weight:600; color:#93C5FD;">🔒 鎖定既有物品縮放 (僅移動/旋轉)</span>
         <input type="checkbox" id="lock-scale-chk" style="width:16px; height:16px; cursor:pointer; flex-shrink:0;">
       </div>
 
-      <div class="quick-add-box">
-        <div class="panel-title" style="margin-bottom:2px;">➕ 新增物件設定</div>
-        <div class="field-group">
-          <label>1. 選擇所屬分類</label>
-          <select id="new-obj-category"></select>
+      <!-- 1. 新增物件設定 (預設收合) -->
+      <div class="fold-section" id="fold-sec-add">
+        <div class="fold-header" onclick="toggleFoldSection('fold-sec-add')">
+          <span>➕ 新增物件設定</span>
+          <span class="fold-arrow" id="fold-sec-add-arrow">▸</span>
         </div>
-        <div class="field-group">
-          <label>2. 選擇模型種類</label>
-          <select id="new-obj-type" onchange="onNewObjTypeChange()">
-            <option value="furniture">🛋️ 一般家具 / 床 (貼地)</option>
-            <option value="chair">🪑 椅子 (可設坐墊高度供人物坐)</option>
-            <option value="wall_item">🖼️ 牆壁上物品 (貼牆可調Z軸)</option>
-            <option value="door">🚪 房門 (貼牆貼地)</option>
-            <option value="window">🪟 窗戶 (貼牆外突可調Z軸)</option>
-            <option value="socket">🔌 插座 (貼牆外突可調Z軸)</option>
-            <option value="switch">💡 開關 (貼牆外突可調Z軸)</option>
-          </select>
-        </div>
-        <div class="field-group">
-          <label>3. 物件名稱與尺寸 (cm)</label>
-          <input type="text" id="new-obj-name" value="新家具" placeholder="輸入物件名稱">
-          <div class="field-row" style="margin-top:3px;">
-            <div><span>寬 W</span><input type="number" id="new-obj-w" value="60"></div>
-            <div><span>深 D</span><input type="number" id="new-obj-d" value="50"></div>
-            <div><span>總高 H</span><input type="number" id="new-obj-h" value="30"></div>
-            <div id="new-obj-seath-row" style="display:none;"><span style="color:#38BDF8;font-weight:bold;">坐墊高</span><input type="number" id="new-obj-seath" value="45"></div>
-            <div id="new-obj-z-row" style="display:none;"><span style="color:#F59E0B;">離地Z</span><input type="number" id="new-obj-z" value="0"></div>
+        <div class="fold-body">
+          <div class="field-group">
+            <label>1. 選擇所屬分類</label>
+            <select id="new-obj-category"></select>
           </div>
+          <div class="field-group">
+            <label>2. 選擇模型種類</label>
+            <select id="new-obj-type" onchange="onNewObjTypeChange()">
+              <option value="furniture">🛋️ 一般家具 / 床 (貼地)</option>
+              <option value="chair">🪑 椅子 (可設坐墊高度供人物坐)</option>
+              <option value="wall_item">🖼️ 牆壁上物品 (貼牆可調Z軸)</option>
+              <option value="door">🚪 房門 (貼牆貼地)</option>
+              <option value="window">🪟 窗戶 (貼牆外突可調Z軸)</option>
+              <option value="socket">🔌 插座 (貼牆外突可調Z軸)</option>
+              <option value="switch">💡 開關 (貼牆外突可調Z軸)</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>3. 物件名稱與尺寸 (cm)</label>
+            <input type="text" id="new-obj-name" value="新家具" placeholder="輸入物件名稱">
+            <div class="field-row" style="margin-top:3px;">
+              <div><span>寬 W</span><input type="number" id="new-obj-w" value="60"></div>
+              <div><span>深 D</span><input type="number" id="new-obj-d" value="50"></div>
+              <div><span>總高 H</span><input type="number" id="new-obj-h" value="30"></div>
+              <div id="new-obj-seath-row" style="display:none;"><span style="color:#38BDF8;font-weight:bold;">坐墊高</span><input type="number" id="new-obj-seath" value="45"></div>
+              <div id="new-obj-z-row" style="display:none;"><span style="color:#F59E0B;">離地Z</span><input type="number" id="new-obj-z" value="0"></div>
+            </div>
+          </div>
+          <button onclick="confirmAddNewObject()" class="primary" style="width:100%; padding:7px; font-weight:bold; margin-top:2px;">
+            ➕ 確認新增物件
+          </button>
         </div>
-        <button onclick="confirmAddNewObject()" class="primary" style="width:100%; padding:7px; font-weight:bold; margin-top:2px;">
-          ➕ 確認新增物件
-        </button>
       </div>
 
-      <div id="no-selection" style="color: #94A3B8; font-size: 11px; margin: 4px 0; text-align: center; line-height: 1.4; background: #1F232B; padding: 8px; border-radius: 6px; border: 1px dashed #334155;">
-        👈 <b>點選畫面或列表中的物件進行編輯</b><br>💡 碰到牆壁或家具會自動貼齊卡住；拉超過牆壁 3/4 才移至房外備用區！
-      </div>
-
-      <div id="prop-editor" style="display: none;">
-        <div class="panel-title">
+      <!-- 2. 編輯選取物件 (預設收合，點選物件時自動展開) -->
+      <div class="fold-section" id="fold-sec-edit">
+        <div class="fold-header" onclick="toggleFoldSection('fold-sec-edit')">
           <span>✏️ 編輯選取物件</span>
-          <span id="prop-type-badge" style="font-size:10px; color:#F59E0B;"></span>
+          <span class="fold-arrow" id="fold-sec-edit-arrow">▸</span>
         </div>
-
-        <div class="field-group">
-          <label>名稱與所屬分類 (選「床」則可踏上並疊加高度)</label>
-          <div class="field-row">
-            <div><span>名稱</span><input type="text" id="prop-name"></div>
-            <div><span>分類</span><select id="prop-category"></select></div>
+        <div class="fold-body">
+          <div id="no-selection" style="color: #94A3B8; font-size: 11px; margin: 2px 0; text-align: center; line-height: 1.4; background: #14171C; padding: 8px; border-radius: 6px; border: 1px dashed #334155;">
+            👈 <b>點選畫面或列表中的物件進行編輯</b><br>💡 留白處禁止擺放物件；支援 Ctrl+C 複製、Ctrl+V 貼上！
           </div>
-        </div>
 
-        <div class="field-group">
-          <label>物件模型種類</label>
-          <select id="prop-type">
-            <option value="furniture">🛋️ 一般家具 / 床 (貼地)</option>
-            <option value="chair">🪑 椅子 (可設坐墊高度)</option>
-            <option value="wall_item">🖼️ 牆壁上物品 (貼牆可調Z軸)</option>
-            <option value="door">🚪 房門 (貼牆貼地)</option>
-            <option value="window">🪟 窗戶 (貼牆外突可調Z軸)</option>
-            <option value="socket">🔌 插座 (貼牆外突可調Z軸)</option>
-            <option value="switch">💡 開關 (貼牆外突可調Z軸)</option>
-          </select>
-        </div>
+          <div id="prop-editor" style="display: none; flex-direction: column; gap: 6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11px; color:#93C5FD; font-weight:600;">當前選取模型：</span>
+              <span id="prop-type-badge" style="font-size:10px; color:#F59E0B;"></span>
+            </div>
 
-        <div class="field-group">
-          <label>尺寸：寬(W) / 深(D) / 總高(H) cm</label>
-          <div class="field-row">
-            <div><span style="font-size:11px;color:#94A3B8;">寬度 W</span><input type="number" id="prop-w"></div>
-            <div><span style="font-size:11px;color:#94A3B8;">深度 D</span><input type="number" id="prop-d"></div>
-            <div><span style="font-size:11px;color:#94A3B8;">總高 H</span><input type="number" id="prop-h" placeholder="30"></div>
-            <div id="prop-seath-row" style="display:none;"><span style="font-size:11px;color:#38BDF8;font-weight:bold;">坐墊高</span><input type="number" id="prop-seath" placeholder="45"></div>
+            <div class="field-group">
+              <label>名稱與所屬分類 (選「床」則可踏上並疊加高度)</label>
+              <div class="field-row">
+                <div><span>名稱</span><input type="text" id="prop-name"></div>
+                <div><span>分類</span><select id="prop-category"></select></div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label>物件模型種類</label>
+              <select id="prop-type">
+                <option value="furniture">🛋️ 一般家具 / 床 (貼地)</option>
+                <option value="chair">🪑 椅子 (可設坐墊高度)</option>
+                <option value="wall_item">🖼️ 牆壁上物品 (貼牆可調Z軸)</option>
+                <option value="door">🚪 房門 (貼牆貼地)</option>
+                <option value="window">🪟 窗戶 (貼牆外突可調Z軸)</option>
+                <option value="socket">🔌 插座 (貼牆外突可調Z軸)</option>
+                <option value="switch">💡 開關 (貼牆外突可調Z軸)</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label>尺寸：寬(W) / 深(D) / 總高(H) cm</label>
+              <div class="field-row">
+                <div><span style="font-size:11px;color:#94A3B8;">寬度 W</span><input type="number" id="prop-w"></div>
+                <div><span style="font-size:11px;color:#94A3B8;">深度 D</span><input type="number" id="prop-d"></div>
+                <div><span style="font-size:11px;color:#94A3B8;">總高 H</span><input type="number" id="prop-h" placeholder="30"></div>
+                <div id="prop-seath-row" style="display:none;"><span style="font-size:11px;color:#38BDF8;font-weight:bold;">坐墊高</span><input type="number" id="prop-seath" placeholder="45"></div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label>坐標：X / Y <span id="prop-z-hint" style="color:#F59E0B;font-weight:bold;">/ Z 離地高</span> (cm)</label>
+              <div class="field-row">
+                <div><span style="font-size:11px;color:#94A3B8;">X 坐標</span><input type="number" id="prop-x"></div>
+                <div><span style="font-size:11px;color:#94A3B8;">Y 坐標</span><input type="number" id="prop-y"></div>
+                <div id="prop-z-row"><span style="font-size:11px;color:#F59E0B;">Z 離地</span><input type="number" id="prop-z"></div>
+              </div>
+            </div>
+
+            <div class="field-group" style="background:#14171C; padding:7px; border-radius:6px; border:1px solid #2E3440;">
+              <label><span>🔄 旋轉角度與 90° 快速翻轉</span><span id="prop-rot-val" style="color:#60A5FA;font-weight:bold;">0°</span></label>
+              <div style="display:flex; gap:4px; margin:3px 0;">
+                <button type="button" onclick="rotateActiveItemBy(-90)" style="flex:1; background:#1E3A8A; border-color:#3B82F6;">↺ 逆時針 90°</button>
+                <button type="button" onclick="rotateActiveItemBy(90)" style="flex:1; background:#1E3A8A; border-color:#3B82F6;">↻ 順時針 90°</button>
+              </div>
+              <input type="range" id="prop-rot-slider" min="0" max="360" value="0" style="width:100%;">
+              <input type="number" id="prop-rot" min="0" max="360">
+            </div>
+
+            <div class="field-group" id="door-swing-group" style="display:none; background:#271712; padding:8px; border-radius:6px; border:1px solid #9A3412;">
+              <label style="color:#FDBA74; font-weight:600;">🚪 門扇開啟方向編輯</label>
+              <div class="field-row" style="margin-top:4px;">
+                <button id="btn-door-flip-x" style="width:100%; background:#7C2D12;">↔️ 左右換邊開</button>
+                <button id="btn-door-flip-y" style="width:100%; background:#7C2D12;">↕️ 內外推拉反轉</button>
+              </div>
+            </div>
+
+            <div class="field-group" style="background:#14171C; padding:7px; border-radius:6px; border:1px solid #2E3440;">
+              <label>🎨 內部填充顏色 (調色盤)</label>
+              <input type="color" id="prop-color">
+              <div class="recent-colors-row" id="recent-fill-colors"></div>
+            </div>
+
+            <div class="field-group" style="background:#14171C; padding:7px; border-radius:6px; border:1px solid #2E3440;">
+              <label>🖍️ 邊框線條顏色 (調色盤)</label>
+              <input type="color" id="prop-border-color">
+              <div class="recent-colors-row" id="recent-border-colors"></div>
+            </div>
+
+            <div class="field-group" id="scenery-upload-group" style="display:none; background:#1E293B; padding:8px; border-radius:6px; border:1px solid #3B82F6;">
+              <label style="color:#60A5FA; font-weight:600;">🗾 3D 窗戶玻璃景色 (預設富士山)</label>
+              <input type="file" id="prop-scenery-file" accept="image/*" style="font-size: 11px; color: #CBD5E1; margin-top:4px;">
+              <button id="btn-reset-fuji" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗻 恢復預設富士山景</button>
+            </div>
+
+            <div class="field-group" style="background:#1F232B; padding:7px; border-radius:6px; border:1px solid #334155;">
+              <label id="texture-label" style="color:#E2E8F0;">🖼️ 上傳物品表面材質 (適用所有物品)</label>
+              <input type="file" id="prop-texture-file" accept="image/*" style="font-size: 11px; color: #8F96A0; margin-top:3px;">
+              <button id="btn-clear-texture" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗑️ 清除自訂材質</button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 4px;">
+              <div style="display:flex; gap:4px;">
+                <button type="button" onclick="copySelectedItem()" style="flex:1;">📋 複製 (Ctrl+C)</button>
+                <button type="button" onclick="pasteCopiedItem()" style="flex:1;" class="primary">📥 貼上 (Ctrl+V)</button>
+              </div>
+              <button id="btn-duplicate" style="width: 100%;">📑 直接建立複本</button>
+              <button id="btn-delete" class="danger" style="width: 100%;">🗑️ 刪除此物件 (Del)</button>
+            </div>
           </div>
-        </div>
-
-        <div class="field-group">
-          <label>坐標：X / Y <span id="prop-z-hint" style="color:#F59E0B;font-weight:bold;">/ Z 離地高</span> (cm)</label>
-          <div class="field-row">
-            <div><span style="font-size:11px;color:#94A3B8;">X 坐標</span><input type="number" id="prop-x"></div>
-            <div><span style="font-size:11px;color:#94A3B8;">Y 坐標</span><input type="number" id="prop-y"></div>
-            <div id="prop-z-row"><span style="font-size:11px;color:#F59E0B;">Z 離地</span><input type="number" id="prop-z"></div>
-          </div>
-        </div>
-
-        <div class="field-group" style="background:#1C2029; padding:7px; border-radius:6px; border:1px solid #2E3440;">
-          <label><span>🔄 旋轉角度</span><span id="prop-rot-val" style="color:#60A5FA;font-weight:bold;">0°</span></label>
-          <input type="range" id="prop-rot-slider" min="0" max="360" value="0" style="width:100%;">
-          <input type="number" id="prop-rot" min="0" max="360">
-        </div>
-
-        <div class="field-group" id="door-swing-group" style="display:none; background:#271712; padding:8px; border-radius:6px; border:1px solid #9A3412;">
-          <label style="color:#FDBA74; font-weight:600;">🚪 門扇開啟方向編輯</label>
-          <div class="field-row" style="margin-top:4px;">
-            <button id="btn-door-flip-x" style="width:100%; background:#7C2D12;">↔️ 左右換邊開</button>
-            <button id="btn-door-flip-y" style="width:100%; background:#7C2D12;">↕️ 內外推拉反轉</button>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label>顏色外觀 (調色盤)</label>
-          <input type="color" id="prop-color">
-        </div>
-
-        <div class="field-group" id="scenery-upload-group" style="display:none; background:#1E293B; padding:8px; border-radius:6px; border:1px solid #3B82F6;">
-          <label style="color:#60A5FA; font-weight:600;">🗾 3D 窗戶景色 (預設富士山)</label>
-          <input type="file" id="prop-scenery-file" accept="image/*" style="font-size: 11px; color: #CBD5E1; margin-top:4px;">
-          <button id="btn-reset-fuji" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗻 恢復預設富士山景</button>
-        </div>
-
-        <div class="field-group" style="background:#1F232B; padding:7px; border-radius:6px; border:1px solid #334155;">
-          <label id="texture-label" style="color:#E2E8F0;">🎨 上傳物件 / 門扇表面材質</label>
-          <input type="file" id="prop-texture-file" accept="image/*" style="font-size: 11px; color: #8F96A0; margin-top:3px;">
-          <button id="btn-clear-texture" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗑️ 清除自訂材質</button>
-        </div>
-
-        <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 6px;">
-          <button id="btn-duplicate" style="width: 100%;">📋 複製此物件</button>
-          <button id="btn-delete" class="danger" style="width: 100%;">🗑️ 刪除此物件 (Del)</button>
         </div>
       </div>
 
-      <div class="panel-title" style="margin-top:8px;">🏷️ 分類管理 (可增減分類)</div>
-      <div class="field-row">
-        <input type="text" id="new-cat-input" placeholder="輸入新分類名稱...">
-        <button onclick="addCategory()" style="background:#2563EB;border-color:#2563EB;width:100%;">➕ 新增分類項目</button>
+      <!-- 3. 分類管理 (預設收合) -->
+      <div class="fold-section" id="fold-sec-cat">
+        <div class="fold-header" onclick="toggleFoldSection('fold-sec-cat')">
+          <span>🏷️ 分類管理 (可增減分類)</span>
+          <span class="fold-arrow" id="fold-sec-cat-arrow">▸</span>
+        </div>
+        <div class="fold-body">
+          <div class="field-row">
+            <input type="text" id="new-cat-input" placeholder="輸入新分類名稱...">
+            <button onclick="addCategory()" style="background:#2563EB;border-color:#2563EB;width:100%;">➕ 新增分類項目</button>
+          </div>
+          <div id="category-tags-container" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:4px;"></div>
+        </div>
       </div>
-      <div id="category-tags-container" style="display:flex; flex-wrap:wrap; gap:5px; margin-top:4px;"></div>
     </div>
 
     <!-- 標籤 2：地基方位 (地面、3D白牆與天花板、留白處、羅盤與九宮飛星) -->
@@ -267,7 +305,7 @@
       </div>
 
       <!-- 坐下模式專屬選項：坐床邊 (可沿床邊移動) vs 坐椅子上 (下拉選擇椅子) -->
-      <div id="sit-options-box" style="display:none; background:#172554; border:1px solid #3B82F6; border-radius:6px; padding:8px; flex-direction:column; gap:6px;">
+      <div id="sit-options-box" style="display:flex; background:#172554; border:1px solid #3B82F6; border-radius:6px; padding:8px; flex-direction:column; gap:6px;">
         <div style="font-size:11px; font-weight:bold; color:#93C5FD;">🪑 坐姿位置選擇 (腳著地、臀部貼齊座高)</div>
         <div class="field-row">
           <button id="btn-sit-bed-edge" onclick="sitAtBedEdge()" style="width:100%;">🛏️ 坐床邊 (可沿床邊移動)</button>
@@ -275,7 +313,7 @@
         </div>
         <div class="field-group" style="margin:0;">
           <label style="color:#BAE6FD;">選擇要坐哪一張椅子：</label>
-          <select id="sit-chair-select" onchange="sitOnSelectedChair()"></select>
+          <select id="sit-chair-select" onchange="sitOnSelectedChair(this.value)"></select>
         </div>
       </div>
 
@@ -303,16 +341,22 @@
         👁️ 進入第一人稱視角
       </button>
       <div class="field-row" style="margin-top:4px;">
-        <button onclick="sitAtBedEdge(); enterHumanFPV();" style="width:100%; padding:7px;">🪑 坐床邊看房間</button>
-        <button onclick="placeHumanOnBed('lie')" style="width:100%; padding:7px;">🛏️ 躺床上仰視房間</button>
+        <button onclick="sitAtBedEdge(); enterHumanFPV();" style="width:100%; padding:7px;">🛏️ 坐床邊看房間 (第一人稱)</button>
+        <button onclick="sitOnSelectedChair(); enterHumanFPV();" style="width:100%; padding:7px; background:#0284C7; border-color:#38BDF8;">🪑 坐椅子看房間 (第一人稱)</button>
+        <button onclick="placeHumanOnBed('lie')" style="width:100%; padding:7px;">🛏️ 躺床上仰視房間 (第一人稱)</button>
       </div>
     </div>
 
     <!-- 標籤 4：專案存檔 -->
     <div class="tab-content" id="tab-content-save" style="display: none;">
-      <div class="panel-title">💾 1. 存於 App 內 (本地保存)</div>
-      <button id="btn-save-local" class="primary" style="width: 100%; padding:8px;">💾 儲存目前設計至 App</button>
+      <div class="panel-title">💾 1. 存於 App 內 (重開 App 自動載入上次存檔)</div>
+      <div style="background:#1E293B; border:1px solid #3B82F6; padding:8px; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:6px;">
+        <span style="font-size:11px; font-weight:600; color:#93C5FD;">☑️ 異動時自動儲存至 App<br><span style="font-size:10px;color:#94A3B8;font-weight:normal;">(未勾選時，請按下方按鈕手動存檔)</span></span>
+        <input type="checkbox" id="auto-save-chk" style="width:18px; height:18px; cursor:pointer; flex-shrink:0;">
+      </div>
+      <button id="btn-save-local" class="primary" style="width: 100%; padding:8px; font-weight:bold;">💾 手動儲存目前設計至 App</button>
       <button id="btn-load-local" style="width: 100%; padding:8px;">📂 讀取上次儲存的設計</button>
+      <div id="save-status-hint" style="font-size:10px; color:#34D399; text-align:center;"></div>
 
       <div class="panel-title" style="margin-top: 12px;">📁 2. 下載檔案與上傳繼續使用</div>
       <button id="btn-export-file" style="width: 100%; padding:8px; background: #4F46E5; border-color: #4F46E5;">📥 下載設計資料檔 (.json)</button>
@@ -353,6 +397,10 @@
       <button id="btn-zoom-fit">🔍 居中</button>
       <button id="btn-pan-toggle">✋ 平移: 關</button>
       <button id="btn-lock-scale-2d" onclick="toggleLockScaleBtn()">🔓 縮放: 開</button>
+      <button onclick="rotateActiveItemBy(-90)" title="逆時針轉90度">↺90°</button>
+      <button onclick="rotateActiveItemBy(90)" title="順時針轉90度">↻90°</button>
+      <button onclick="copySelectedItem()" title="複製選取物件 (Ctrl+C)">📋 複製</button>
+      <button onclick="pasteCopiedItem()" title="貼上物件 (Ctrl+V)" class="primary">📥 貼上</button>
       <button onclick="deleteSelectedActive()" class="danger">🗑️ 刪除</button>
     </div>
 
@@ -361,6 +409,10 @@
       <button id="btn-3d-rotate" onclick="set3DGizmoMode('rotate')">🔄 旋轉</button>
       <button id="btn-3d-scale" onclick="set3DGizmoMode('scale')">↔️ 縮放物品</button>
       <button id="btn-lock-scale-3d" onclick="toggleLockScaleBtn()">🔓 縮放: 開</button>
+      <button onclick="rotateActiveItemBy(-90)" title="逆時針轉90度">↺90°</button>
+      <button onclick="rotateActiveItemBy(90)" title="順時針轉90度">↻90°</button>
+      <button onclick="copySelectedItem()" title="複製選取物件 (Ctrl+C)">📋 複製</button>
+      <button onclick="pasteCopiedItem()" title="貼上物件 (Ctrl+V)" class="primary">📥 貼上</button>
       <button onclick="deleteSelectedActive()" class="danger">🗑️ 刪除</button>
     </div>
 
@@ -384,7 +436,7 @@
         </div>
 
         <!-- 坐姿快捷切換 (坐床邊 vs 下拉選椅子) -->
-        <div id="hud-sit-bar" style="display:none; gap:3px; align-items:center;">
+        <div id="hud-sit-bar" style="display:flex; gap:3px; align-items:center;">
           <button onclick="sitAtBedEdge()" style="font-size:9px; padding:2px 4px; flex-shrink:0;">坐床邊</button>
           <select id="hud-chair-select" onchange="onHudChairSelectChange()" style="font-size:9px; padding:2px 3px;"></select>
         </div>
@@ -436,8 +488,12 @@
       <button onclick="toggleMobilePanel('canvas')" class="danger" style="padding:2px 6px;">✕</button>
     </div>
     <div class="panel-title">
-      <span>📋 分類列表 (點分類展開)</span>
-      <span id="obj-count" style="font-size: 11px; color: #94A3B8;">0</span>
+      <span>📋 分類列表</span>
+      <div style="display:flex; align-items:center; gap:4px;">
+        <button onclick="copySelectedItem()" style="padding:2px 6px; font-size:10px;" title="複製選取物件 (Ctrl+C)">📋複製</button>
+        <button onclick="pasteCopiedItem()" class="primary" style="padding:2px 6px; font-size:10px;" title="貼上物件 (Ctrl+V)">📥貼上</button>
+        <span id="obj-count" style="font-size: 11px; color: #94A3B8;">0</span>
+      </div>
     </div>
     <div class="item-list" id="item-list-container"></div>
   </div>
