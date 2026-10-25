@@ -446,7 +446,7 @@ function initThree() {
           return;
         } else if (hit.userData.itemId) {
           const hitItem = appState.items.find(i => i.id === hit.userData.itemId);
-          if (activeId === "HUMAN" && hitItem && isBedItem(hitItem)) {
+          if (activeId === "HUMAN" && hitItem && isItemSteppableByHuman(hitItem)) {
             const pt = intersects[0].point;
             triggerWalkToTarget(pt.x, pt.z);
             return;
@@ -736,7 +736,7 @@ function updateThreeScene() {
     scene.add(itemMesh);
     selectable3DMeshes.push(itemMesh);
 
-    if (isBedItem(item)) {
+    if (isItemSteppableByHuman(item)) {
       walkable3DMeshes.push(itemMesh);
     }
 

@@ -153,10 +153,36 @@
               <button id="btn-reset-fuji" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗻 恢復預設富士山景</button>
             </div>
 
-            <div class="field-group" style="background:#1F232B; padding:7px; border-radius:6px; border:1px solid #334155;">
-              <label id="texture-label" style="color:#E2E8F0;">🖼️ 上傳物品表面材質 (適用所有物品)</label>
-              <input type="file" id="prop-texture-file" accept="image/*" style="font-size: 11px; color: #8F96A0; margin-top:3px;">
-              <button id="btn-clear-texture" style="margin-top:4px; font-size:11px; padding:3px 8px;">🗑️ 清除自訂材質</button>
+            <div class="field-group" style="background:#1B2434; padding:8px; border-radius:6px; border:1px solid #3B82F6; display:flex; flex-direction:column; gap:6px;">
+              <label id="texture-label" style="color:#93C5FD; font-weight:600;">📸 實景拍照 / 上傳照片渲染主角 (自動去背濾除雜物)</label>
+              <div style="font-size:10px; color:#CBD5E1; line-height:1.35;">
+                拍下現實生活中的物品照片（含背景雜物亦可），系統會自動提取畫面主角（如椅子、櫃子）並渲染貼合至此物件：
+              </div>
+              <input type="file" id="prop-texture-file" accept="image/*" style="font-size: 11px; color: #E2E8F0;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                <span style="font-size:10px; color:#93C5FD;">🎯 自動提取主角去背濾除雜物</span>
+                <input type="checkbox" id="prop-extract-subject-chk" checked style="width:15px; height:15px; cursor:pointer;">
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:10px; color:#94A3B8; white-space:nowrap;">主角聚焦度</span>
+                <input type="range" id="prop-extract-strength" min="0" max="100" value="65" style="flex:1;">
+                <span id="prop-extract-val" style="font-size:10px; color:#38BDF8; min-width:28px;">65%</span>
+              </div>
+
+              <!-- 內建 Higgsfield.ai 專屬主角提取與 3D 渲染提示詞 -->
+              <div style="background:#0F172A; border:1px solid #475569; border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:4px; margin-top:2px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:10px; font-weight:bold; color:#C084FC;">✨ Higgsfield.ai 實景主角提取渲染提示詞</span>
+                  <a href="https://higgsfield.ai/" target="_blank" rel="noopener" style="font-size:10px; color:#38BDF8; text-decoration:underline;">開啟網站 ↗</a>
+                </div>
+                <textarea id="prop-higgsfield-prompt" rows="4" style="width:100%; background:#090D16; color:#E2E8F0; border:1px solid #334155; border-radius:4px; font-size:10px; padding:4px; line-height:1.35; resize:vertical;"></textarea>
+                <div style="display:flex; gap:4px;">
+                  <button type="button" onclick="copyHiggsfieldPromptAndOpen(false)" style="flex:1; font-size:10px; padding:4px; background:#334155;">📋 複製提示詞</button>
+                  <button type="button" onclick="copyHiggsfieldPromptAndOpen(true)" class="purple" style="flex:1.3; font-size:10px; padding:4px; font-weight:bold;">🚀 複製並開 Higgsfield.ai</button>
+                </div>
+              </div>
+
+              <button id="btn-clear-texture" style="margin-top:2px; font-size:11px; padding:4px 8px;">🗑️ 清除自訂照片/材質</button>
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 4px;">
@@ -431,14 +457,15 @@
         <div class="fpv-mini-row">
           <button id="hud-btn-stand" onclick="setHumanPosture('stand')">🧍站</button>
           <button id="hud-btn-sit" onclick="setHumanPosture('sit')">🪑坐</button>
-          <button id="hud-btn-lie" onclick="setHumanPosture('lie')">🛏️躺</button>
+          <button id="hud-btn-lie" onclick="placeHumanOnBed('lie')">🛏️躺床上</button>
           <button id="hud-btn-lock-h" onclick="toggleLockHorizFPV()">🔓自由</button>
         </div>
 
-        <!-- 坐姿快捷切換 (坐床邊 vs 下拉選椅子) -->
-        <div id="hud-sit-bar" style="display:flex; gap:3px; align-items:center;">
-          <button onclick="sitAtBedEdge()" style="font-size:9px; padding:2px 4px; flex-shrink:0;">坐床邊</button>
-          <select id="hud-chair-select" onchange="onHudChairSelectChange()" style="font-size:9px; padding:2px 3px;"></select>
+        <!-- 坐姿與躺床快捷切換 (坐床邊 / 躺床上 / 下拉選椅子) -->
+        <div id="hud-sit-bar" style="display:flex; gap:3px; align-items:center; flex-wrap:wrap;">
+          <button onclick="sitAtBedEdge()" style="font-size:9px; padding:2px 5px; flex-shrink:0;" title="移至床邊坐下">🪑坐床邊</button>
+          <button onclick="placeHumanOnBed('lie')" style="font-size:9px; padding:2px 5px; flex-shrink:0; background:#be185d; border-color:#f472b6;" title="移至床上躺下仰視">🛏️躺床上</button>
+          <select id="hud-chair-select" onchange="onHudChairSelectChange()" style="font-size:9px; padding:2px 3px; flex:1; min-width:75px;"></select>
         </div>
 
         <!-- 十字方向鍵 + 視角仰角滑桿 -->

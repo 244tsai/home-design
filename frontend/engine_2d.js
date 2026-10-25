@@ -122,6 +122,27 @@ function isOuterWallProtrudingType(t) {
   return ["window", "socket", "switch"].includes(t);
 }
 
+// 計算物件可供人物站上去的有效踏面高度：
+// 椅子 (chair) 站上去時固定踩在「椅墊高度 (seat_h)」，而非椅背最高處 (h)！
+function getItemSteppableHeight(it) {
+  if (!it) return 9999;
+  const zBase = it.z || 0;
+  if (isChairItem(it)) {
+    return zBase + (it.seat_h || 45);
+  }
+  return zBase + (it.h || 30);
+}
+
+// 判斷物件是否可讓人物站上去走過去：
+// 比人物身高 1/2 還矮的物件 (stepH <= 身高 * 0.5) 或床鋪，人物皆可站上去並走過去！
+function isItemSteppableByHuman(it) {
+  if (!it || isOuterWallProtrudingType(it.item_type)) return false;
+  if (it.item_type === "wall_item" || it.item_type === "door") return false;
+  const halfStature = (appState.human.height || 178) * 0.5;
+  const stepH = getItemSteppableHeight(it);
+  return isBedItem(it) || stepH <= halfStature;
+}
+
 function getItemAABB(it) {
   const rad = (it.rot || 0) * Math.PI / 180;
   const cx = it.x + it.w / 2;
@@ -400,10 +421,49 @@ function enforceItemConstraints(item, mode = "move", showMsg = false) {
   // 若移動或旋轉的是目前人物正坐著的椅子，人物位置與背靠椅背朝向同步跟隨椅子更新
   if (appState.human.posture === "sit" && appState.human.sit_mode === "chair" && appState.human.sit_chair_id === item.id) {
     alignHumanToChair(item);
+  } else if (appState.human.posture === "stand") {
+    // 若移動高大障礙物與站立人物重合，自動將人物推開至障礙物外緣；若移動矮物件到人物腳下，自動更新人物踏面高度 z
+    resolveHumanItemOverlapAfterItemMove(item);
   }
 
   saveValidItemBackup(item);
   return true;
+}
+
+// 當家具移動後若與人物重合：矮物件 (<= 身高 1/2) 讓人物直接站上去；高大物件 (> 身高 1/2) 自動將人物推至邊緣外防卡死
+function resolveHumanItemOverlapAfterItemMove(item) {
+  if (!item || isOuterWallProtrudingType(item.item_type)) return;
+  const radius = 12;
+  const rw = appState.room.width, rd = appState.room.depth;
+
+  if (!isItemSteppableByHuman(item) && (item.z || 0) <= 120) {
+    const box = getItemAABB(item);
+    const hx = appState.human.x, hy = appState.human.y;
+    if (hx > box.x0 - radius && hx < box.x1 + radius && hy > box.y0 - radius && hy < box.y1 + radius) {
+      const candidates = [
+        { x: box.x0 - radius - 2, y: hy },
+        { x: box.x1 + radius + 2, y: hy },
+        { x: hx, y: box.y0 - radius - 2 },
+        { x: hx, y: box.y1 + radius + 2 }
+      ].filter(p => p.x >= radius && p.x <= rw - radius && p.y >= radius && p.y <= rd - radius);
+
+      candidates.sort((a, b) => Math.hypot(a.x - hx, a.y - hy) - Math.hypot(b.x - hx, b.y - hy));
+      for (let i = 0; i < candidates.length; i++) {
+        const check = checkHumanWalkable(candidates[i].x, candidates[i].y);
+        if (check.allowed) {
+          appState.human.x = Math.round(candidates[i].x);
+          appState.human.y = Math.round(candidates[i].y);
+          appState.human.z = check.baseZ;
+          initHumanFormValues();
+          return;
+        }
+      }
+    }
+  }
+  // 重新計算腳下踏面高度 (例如矮物或椅子移到腳下時自動站上去，移開時自動落回地面)
+  const checkNow = checkHumanWalkable(appState.human.x, appState.human.y);
+  appState.human.z = checkNow.baseZ;
+  initHumanFormValues();
 }
 
 function findNonOverlappingSpot(newItem) {
@@ -427,54 +487,80 @@ function findNonOverlappingSpot(newItem) {
   saveValidItemBackup(newItem);
 }
 
-// 人物行走與坐床邊移動邏輯（留白處 voids 允許人物自由走過，不阻擋人物）
+// 人物行走與踏上矮物邏輯：
+// 1. 留白處 (voids) 允許人物自由走過。
+// 2. 高度 <= 人物身高 1/2 的物件與椅子、床鋪，人物可直接站上去走過去（椅子固定站於椅墊高度 seat_h）。
+// 3. 高於身高 1/2 的大型櫃體不可主動走進重合；但若因移動家具造成人物與高櫃重合，允許人物往外走出來脫困！
 function checkHumanWalkable(nx, ny) {
-  const radius = 12;
+  const radius = 11;
   const rw = appState.room.width, rd = appState.room.depth;
 
-  // 若處於坐姿（坐床邊或坐椅子），直接允許定位於該座位基準點，不受家具碰撞半徑阻擋
+  // 若處於坐姿（坐床邊或坐椅子），直接允許定位於該座位基準點
   if (appState.human.posture === "sit") {
     const bed = appState.items.find(i => isBedItem(i));
     if (appState.human.sit_mode === "bed_edge" && bed) {
       appState.human.seat_h = (bed.z || 0) + (bed.h || 55);
     }
-    return { allowed: true, baseZ: 0 };
+    return { allowed: true, baseZ: 0, steppedItem: null };
   }
 
   if (appState.room.show_walls) {
     if (nx < radius || nx > rw - radius || ny < radius || ny > rd - radius) {
-      return { allowed: false, baseZ: appState.human.z || 0 };
+      return { allowed: false, baseZ: appState.human.z || 0, steppedItem: null };
     }
   }
 
   let supportZ = 0;
+  let steppedItem = null;
+  const curX = appState.human.x;
+  const curY = appState.human.y;
+
   for (let i = 0; i < appState.items.length; i++) {
     const it = appState.items[i];
-    if (isOuterWallProtrudingType(it.item_type)) continue;
+    if (isOuterWallProtrudingType(it.item_type) || it.item_type === "door") continue;
     if ((it.z || 0) > 120) continue;
 
     const rad = -(it.rot || 0) * Math.PI / 180;
     const cx = it.x + it.w / 2;
     const cy = it.y + it.d / 2;
-    const dx = nx - cx;
-    const dy = ny - cy;
+
+    const dx = nx - cx, dy = ny - cy;
     const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
     const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
 
     const halfW = it.w / 2;
     const halfD = it.d / 2;
 
-    if (isBedItem(it)) {
-      if (Math.abs(lx) <= halfW + 6 && Math.abs(ly) <= halfD + 6) {
-        supportZ = Math.max(supportZ, (it.z || 0) + (it.h || 55));
+    // 判斷是否為可踏上走過去的低矮物件 (<= 身高 1/2) 或椅子 / 床鋪
+    if (isItemSteppableByHuman(it)) {
+      if (Math.abs(lx) <= halfW + 4 && Math.abs(ly) <= halfD + 4) {
+        const stepH = getItemSteppableHeight(it);
+        if (stepH >= supportZ) {
+          supportZ = stepH;
+          steppedItem = it;
+        }
       }
     } else if (it.item_type === "furniture" || it.item_type === "chair" || it.item_type === "wall_item") {
+      // 高於身高 1/2 的高大物件：不可主動走進，但若目前已經重合則允許往外走出來！
       if (Math.abs(lx) < halfW + radius && Math.abs(ly) < halfD + radius) {
-        return { allowed: false, baseZ: appState.human.z || 0 };
+        const cdx = curX - cx, cdy = curY - cy;
+        const curLx = cdx * Math.cos(rad) - cdy * Math.sin(rad);
+        const curLy = cdx * Math.sin(rad) + cdy * Math.cos(rad);
+        const alreadyInside = (Math.abs(curLx) < halfW + radius && Math.abs(curLy) < halfD + radius);
+
+        if (alreadyInside) {
+          // 計算離邊界外圍的推進程度：若新座標比舊座標更往外移，放行讓人物走出來！
+          const curPen = Math.min(halfW + radius - Math.abs(curLx), halfD + radius - Math.abs(curLy));
+          const newPen = Math.min(halfW + radius - Math.abs(lx), halfD + radius - Math.abs(ly));
+          if (newPen < curPen - 0.1) {
+            continue;
+          }
+        }
+        return { allowed: false, baseZ: appState.human.z || 0, steppedItem: null };
       }
     }
   }
-  return { allowed: true, baseZ: supportZ };
+  return { allowed: true, baseZ: supportZ, steppedItem: steppedItem };
 }
 
 // 取得床鋪四邊可供坐下的邊緣區段（自動排除緊貼牆壁 < 10cm 的床頭邊，避免坐進牆內卡死）
@@ -1052,29 +1138,38 @@ window.addEventListener("keydown", function(e) {
       deleteItemById(activeId);
     }
   }
-  // 2D / 3D / FPV 皆支援方向鍵與 WASD 移動人物（坐床邊時亦可順暢沿床沿移動）
+  // 2D / 3D / FPV 皆支援方向鍵與 WASD 移動人物（站立時可踏上矮物或脫離重合，坐床邊時沿床沿移動）
+  const step2D = 10;
   if (e.key === "w" || e.key === "W" || e.key === "ArrowUp") {
     fpvMoveDir.forward = 1; walkTarget = null;
-    if (currentMode === "2D" && appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") {
-      slideHumanAlongBedEdge(1, 0, 8); initHumanFormValues(); renderFullScene();
+    if (currentMode === "2D") {
+      if (appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") slideHumanAlongBedEdge(1, 0, 8);
+      else tryMoveHumanTo(appState.human.x, appState.human.y - step2D, true);
+      initHumanFormValues(); renderFullScene();
     }
   }
   if (e.key === "s" || e.key === "S" || e.key === "ArrowDown") {
     fpvMoveDir.forward = -1; walkTarget = null;
-    if (currentMode === "2D" && appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") {
-      slideHumanAlongBedEdge(-1, 0, 8); initHumanFormValues(); renderFullScene();
+    if (currentMode === "2D") {
+      if (appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") slideHumanAlongBedEdge(-1, 0, 8);
+      else tryMoveHumanTo(appState.human.x, appState.human.y + step2D, true);
+      initHumanFormValues(); renderFullScene();
     }
   }
   if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft") {
     fpvMoveDir.right = -1; walkTarget = null;
-    if (currentMode === "2D" && appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") {
-      slideHumanAlongBedEdge(0, -1, 8); initHumanFormValues(); renderFullScene();
+    if (currentMode === "2D") {
+      if (appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") slideHumanAlongBedEdge(0, -1, 8);
+      else tryMoveHumanTo(appState.human.x - step2D, appState.human.y, true);
+      initHumanFormValues(); renderFullScene();
     }
   }
   if (e.key === "d" || e.key === "D" || e.key === "ArrowRight") {
     fpvMoveDir.right = 1; walkTarget = null;
-    if (currentMode === "2D" && appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") {
-      slideHumanAlongBedEdge(0, 1, 8); initHumanFormValues(); renderFullScene();
+    if (currentMode === "2D") {
+      if (appState.human.posture === "sit" && appState.human.sit_mode === "bed_edge") slideHumanAlongBedEdge(0, 1, 8);
+      else tryMoveHumanTo(appState.human.x + step2D, appState.human.y, true);
+      initHumanFormValues(); renderFullScene();
     }
   }
 });
@@ -1672,6 +1767,11 @@ function updateLeftItemPanel() {
 
   document.getElementById("door-swing-group").style.display = (t === "door") ? "flex" : "none";
   document.getElementById("scenery-upload-group").style.display = (t === "window") ? "flex" : "none";
+
+  const promptEl = document.getElementById("prop-higgsfield-prompt");
+  if (promptEl && document.activeElement !== promptEl) {
+    promptEl.value = generateHiggsfieldPromptForItem(item);
+  }
 }
 
 function updateSingleItemVisual(item, mode = "move", enforceNow = true) {
@@ -1836,6 +1936,165 @@ document.getElementById("btn-reset-fuji").addEventListener("click", () => {
   item.scenery = appState.default_fuji;
   if (renderer) updateThreeScene();
 });
+// 自動依選取物品生成專屬之 Higgsfield.ai 實景照片主角提取與 3D 材質渲染提示詞
+function generateHiggsfieldPromptForItem(item) {
+  if (!item) return "";
+  const typeMap = {
+    furniture: "indoor furniture / cabinet / table",
+    chair: "ergonomic chair / seating furniture",
+    wall_item: "wall-mounted appliance or frame",
+    door: "interior room door panel",
+    window: "architectural window frame",
+    socket: "wall electrical outlet plate",
+    switch: "wall light switch panel"
+  };
+  const enType = typeMap[item.item_type] || "furniture object";
+  const w = Math.round(item.w), d = Math.round(item.d), h = Math.round(item.h || 30);
+  return `[Higgsfield.ai 實景主角提取與渲染指令]
+請從上傳的現實生活照片中，僅精準鎖定並提取主角「${item.name}」（自動忽略並移除照片內的背景雜物、其他無關物品、牆面與地板），完整保留主角「${item.name}」的真實表面材質、木紋/布料肌理、色澤與結構細節，轉換為可貼合於 ${w}×${d}×${h} cm 模型的正交無縫材質與 3D 渲染圖。
+Prompt: Isolate and extract ONLY the main subject [${item.name}, ${enType}] from the uploaded real-life photo. Completely remove all background clutter, surrounding objects, walls, and floor. Reconstruct a clean, studio-lit, orthographic front-and-top texture map and 3D product render of the ${item.name} (${w}x${d}x${h} cm), preserving authentic surface texture, material grain, and color.`;
+}
+
+window.copyHiggsfieldPromptAndOpen = function(openSite = false) {
+  const promptEl = document.getElementById("prop-higgsfield-prompt");
+  if (!promptEl) return;
+  const text = promptEl.value.trim();
+  if (!text) return;
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+  } else {
+    promptEl.select();
+    document.execCommand("copy");
+  }
+
+  if (openSite) {
+    showToast("🚀 已複製主角渲染提示詞，正在開啟 Higgsfield.ai！");
+    window.open("https://higgsfield.ai/", "_blank", "noopener");
+  } else {
+    showToast("📋 已複製 Higgsfield.ai 主角渲染提示詞！");
+  }
+};
+
+// 實景照片主角自動提取與背景雜物濾除演算法：
+// 取樣照片四周邊框作為背景色分布，計算中央主角顯著性 (Saliency + 邊緣梯度)，自動裁切聚焦於照片主角並濾除外圍雜物
+function processRealPhotoMainSubject(rawDataUrl, extractEnabled, strengthPct, callback) {
+  if (!extractEnabled || strengthPct <= 0) {
+    callback(rawDataUrl);
+    return;
+  }
+  const img = new Image();
+  img.onload = function() {
+    const maxDim = 512;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.max(16, Math.round(img.width * scale));
+    const h = Math.max(16, Math.round(img.height * scale));
+
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = w;
+    tempCanvas.height = h;
+    const ctx = tempCanvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    // 1. 取樣照片外框邊緣 (8% 邊界) 計算背景平均色與變異範圍
+    const borderSamples = [];
+    const bw = Math.max(2, Math.floor(w * 0.08));
+    const bh = Math.max(2, Math.floor(h * 0.08));
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        if (x < bw || x >= w - bw || y < bh || y >= h - bh) {
+          const idx = (y * w + x) * 4;
+          borderSamples.push([data[idx], data[idx + 1], data[idx + 2]]);
+        }
+      }
+    }
+
+    let bgR = 220, bgG = 220, bgB = 220;
+    if (borderSamples.length > 0) {
+      let sr = 0, sg = 0, sb = 0;
+      borderSamples.forEach(c => { sr += c[0]; sg += c[1]; sb += c[2]; });
+      bgR = sr / borderSamples.length;
+      bgG = sg / borderSamples.length;
+      bgB = sb / borderSamples.length;
+    }
+
+    // 2. 偵測畫面中央主角 (Main Subject) 顯著性邊界框並軟化周邊背景雜物
+    const strength = Math.max(0.1, Math.min(1.0, strengthPct / 100));
+    const colorThresh = 26 + strength * 48;
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    let fgCount = 0;
+
+    for (let y = 0; y < h; y++) {
+      const ny = (y / h - 0.5) * 2;
+      for (let x = 0; x < w; x++) {
+        const nx = (x / w - 0.5) * 2;
+        const idx = (y * w + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+
+        const colorDist = Math.hypot(r - bgR, g - bgG, b - bgB);
+        const centerDist = Math.hypot(nx, ny); // 0 at center, ~1.41 at corners
+        const centerWeight = Math.max(0.2, 1.18 - centerDist * 0.68);
+        const saliency = colorDist * centerWeight;
+
+        if (saliency > colorThresh) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          fgCount++;
+        } else if (centerDist > (1.15 - strength * 0.45) && colorDist < colorThresh * 0.95) {
+          // 濾除照片外圍非主角之背景雜物，平滑過渡至乾淨柔和基底
+          const alphaKeep = Math.max(0.18, 1 - strength * 0.78);
+          data[idx] = Math.round(r * alphaKeep + bgR * (1 - alphaKeep));
+          data[idx + 1] = Math.round(g * alphaKeep + bgG * (1 - alphaKeep));
+          data[idx + 2] = Math.round(b * alphaKeep + bgB * (1 - alphaKeep));
+        }
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+
+    // 3. 自動裁切聚焦至照片主角範圍 (保留適當邊距)
+    if (fgCount > w * h * 0.03 && maxX > minX + 12 && maxY > minY + 12) {
+      const padX = Math.round((maxX - minX) * 0.06);
+      const padY = Math.round((maxY - minY) * 0.06);
+      const cx0 = Math.max(0, minX - padX);
+      const cy0 = Math.max(0, minY - padY);
+      const cw = Math.min(w - cx0, (maxX - minX) + padX * 2);
+      const ch = Math.min(h - cy0, (maxY - minY) + padY * 2);
+
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = cw;
+      outCanvas.height = ch;
+      outCanvas.getContext("2d").drawImage(tempCanvas, cx0, cy0, cw, ch, 0, 0, cw, ch);
+      callback(outCanvas.toDataURL("image/jpeg", 0.9));
+    } else {
+      callback(tempCanvas.toDataURL("image/jpeg", 0.9));
+    }
+  };
+  img.src = rawDataUrl;
+}
+
+function applyItemPhotoSubjectRendering(item) {
+  if (!item || !item.raw_photo) return;
+  const extractChk = document.getElementById("prop-extract-subject-chk");
+  const strengthEl = document.getElementById("prop-extract-strength");
+  const extractEnabled = extractChk ? extractChk.checked : true;
+  const strengthPct = strengthEl ? (parseFloat(strengthEl.value) || 65) : 65;
+
+  processRealPhotoMainSubject(item.raw_photo, extractEnabled, strengthPct, function(processedUrl) {
+    if (typeof textureCache !== "undefined" && item.texture) {
+      textureCache.delete(item.texture);
+    }
+    item.texture = processedUrl;
+    renderFullScene();
+    triggerAutoSaveIfChecked();
+  });
+}
+
 document.getElementById("prop-texture-file").addEventListener("change", function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1843,16 +2102,44 @@ document.getElementById("prop-texture-file").addEventListener("change", function
   reader.onload = function(f) {
     const item = appState.items.find(i => i.id === activeId);
     if (!item) return;
-    item.texture = f.target.result;
-    renderFullScene();
+    item.raw_photo = f.target.result;
+    applyItemPhotoSubjectRendering(item);
+    showToast(`📸 已從實景照片提取主角並渲染至「${item.name}」！`);
   };
   reader.readAsDataURL(file);
 });
+
+const extractChkEl = document.getElementById("prop-extract-subject-chk");
+if (extractChkEl) {
+  extractChkEl.addEventListener("change", () => {
+    const item = appState.items.find(i => i.id === activeId);
+    if (item && item.raw_photo) applyItemPhotoSubjectRendering(item);
+  });
+}
+
+const extractStrengthEl = document.getElementById("prop-extract-strength");
+if (extractStrengthEl) {
+  extractStrengthEl.addEventListener("input", e => {
+    const valLbl = document.getElementById("prop-extract-val");
+    if (valLbl) valLbl.innerText = e.target.value + "%";
+  });
+  extractStrengthEl.addEventListener("change", () => {
+    const item = appState.items.find(i => i.id === activeId);
+    if (item && item.raw_photo) applyItemPhotoSubjectRendering(item);
+  });
+}
+
 document.getElementById("btn-clear-texture").addEventListener("click", () => {
   const item = appState.items.find(i => i.id === activeId);
   if (!item) return;
+  if (typeof textureCache !== "undefined" && item.texture) {
+    textureCache.delete(item.texture);
+  }
   item.texture = "";
+  item.raw_photo = "";
+  document.getElementById("prop-texture-file").value = "";
   renderFullScene();
+  triggerAutoSaveIfChecked();
 });
 
 window.onNewObjTypeChange = function() {
@@ -2182,9 +2469,21 @@ function initHumanFormValues() {
   document.getElementById("hud-pitch-lbl").innerText = Math.round(h.pitch || 0) + "°";
 
   const p = h.posture || "stand";
-  const sitDesc = p === "sit" ? ` (臀高:${h.seat_h || 45}cm/腳著地)` : (h.z > 0 ? " (床上)" : "");
+  let surfaceDesc = "";
+  if (p === "sit") {
+    surfaceDesc = ` (臀高:${h.seat_h || 45}cm/腳著地)`;
+  } else if (h.z > 0) {
+    const chk = checkHumanWalkable(h.x, h.y);
+    if (chk.steppedItem && isChairItem(chk.steppedItem)) {
+      surfaceDesc = ` (站於「${chk.steppedItem.name}」椅墊上)`;
+    } else if (chk.steppedItem) {
+      surfaceDesc = ` (站於「${chk.steppedItem.name}」上)`;
+    } else {
+      surfaceDesc = " (踏於物件上)";
+    }
+  }
   document.getElementById("human-eye-info").innerText = `眼高: ${eyeH} cm`;
-  document.getElementById("human-basez-info").innerText = `踏面Z: ${Math.round(h.z || 0)} cm${sitDesc}`;
+  document.getElementById("human-basez-info").innerText = `踏面Z: ${Math.round(h.z || 0)} cm${surfaceDesc}`;
   const hudEyeLbl = document.getElementById("hud-eye-height-lbl");
   if (hudEyeLbl) hudEyeLbl.innerText = `眼高:${eyeH}cm`;
 
@@ -2245,7 +2544,10 @@ document.getElementById("hud-pitch-slider").addEventListener("input", e => {
 });
 
 window.setHumanPosture = function(p) {
+  const prevPosture = appState.human.posture;
+  const prevSitMode = appState.human.sit_mode;
   appState.human.posture = p;
+
   if (p === "sit") {
     renderChairSelectOptions();
     if (appState.human.sit_mode === "chair") {
@@ -2254,6 +2556,24 @@ window.setHumanPosture = function(p) {
     } else {
       window.sitAtBedEdge();
       return;
+    }
+  }
+
+  // 若從「坐下」切換為「站立」：優先嘗試於面向前方地板自然站起，若前方為書桌或矮物亦可直接踏上或微退站立，絕不卡住
+  if (p === "stand" && prevPosture === "sit") {
+    const yawRad = (appState.human.rot || 0) * Math.PI / 180;
+    const fx = Math.sin(yawRad), fy = -Math.cos(yawRad);
+    // 嘗試往椅子/床沿前方地板站起，或往側邊空地站起，使站起後預設踩在地面 (baseZ = 0)
+    const tryOffsets = [22, 34, -28];
+    for (let i = 0; i < tryOffsets.length; i++) {
+      const tx = Math.round(appState.human.x + fx * tryOffsets[i]);
+      const ty = Math.round(appState.human.y + fy * tryOffsets[i]);
+      const chk = checkHumanWalkable(tx, ty);
+      if (chk.allowed && chk.baseZ === 0) {
+        appState.human.x = tx;
+        appState.human.y = ty;
+        break;
+      }
     }
   }
 
@@ -2271,6 +2591,7 @@ window.setHumanPosture = function(p) {
   initHumanFormValues();
   renderFullScene();
   if (currentMode === "FPV") syncFPVCamera();
+  triggerAutoSaveIfChecked();
 };
 
 window.placeHumanOnBed = function(targetPosture = 'lie') {
